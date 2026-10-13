@@ -161,8 +161,8 @@ const columns = [
   { x: 7.45, y: 10.32, orient: "y", vao: "vão fundo (parede B)" },
 ];
 
-const canvas = document.getElementById("planta");
-const ctx = canvas.getContext("2d");
+let canvas = document.getElementById("planta");
+let ctx = canvas.getContext("2d");
 const JANELA_ALTURA = 1.15;
 
 const VB_NORMAL = { x: 0, y: 0, w: STAGE_W, h: STAGE_H };
@@ -204,6 +204,9 @@ function rotuloCm(m) {
 
 function camada(nome) {
   return document.body.classList.contains(nome);
+}
+function medidasLigadas(folha) {
+  return camada("show-medidas-" + folha);
 }
 
 function copiaDivisoes() {
@@ -536,6 +539,8 @@ function drawEstrutura() {
   drawEixos();
   for (const c of columns) drawPilar(columnBox(c));
   for (const c of COLUNAS_DIVISAO) drawPilar(columnBox(c));
+}
+function drawMedidasEstrutura() {
   drawDim(0, Y0 - 0.75, 3.40, Y0 - 0.75, "3,40 m", COR_COTA);
   drawDim(3.40, Y0 - 0.75, 7.45, Y0 - 0.75, "4,05 m", COR_COTA);
   drawDim(-0.75, 4.00, -0.75, 7.15, "3,15 m", COR_COTA);
@@ -576,6 +581,8 @@ function drawVedacao() {
     faixaCentral(p.x1, p.y1, p.x2, p.y2, p.espessura || WALL_T);
   }
   drawColunaFalsa();
+}
+function drawMedidasVedacao() {
   drawDim(W + 0.35, B_ENTRADA.y0, W + 0.35, B_ENTRADA.y1, "3,20 (entrada)", COR_GERAL);
   drawDim(W + 0.35, B_JANELA.y0, W + 0.35, B_JANELA.y1, "3,17 m", COR_GERAL);
   drawDim(W + 0.35, B_CEGA.y0, W + 0.35, B_CEGA.y1, "3,83 (cega)", COR_GERAL);
@@ -646,9 +653,23 @@ function drawAmbientes() {
   for (const [texto, x, y] of itens) drawUpright(texto, x, y, cor, 13, "700");
 }
 
+function pintar() {
+  ctx.fillStyle = "#fbfcfe";
+  ctx.fillRect(px(0), py(Y0), u(W), u(D));
+  if (camada("show-vedacao")) drawVedacao();
+  if (medidasLigadas("vedacao")) drawMedidasVedacao();
+  if (camada("show-estrutura")) drawEstrutura();
+  if (medidasLigadas("estrutura")) drawMedidasEstrutura();
+  if (camada("show-esquadrias")) drawEsquadrias();
+  if (medidasLigadas("esquadrias")) drawMedidasEsquadrias();
+  if (camada("show-cotas")) drawCotas();
+  if (camada("show-ambientes")) drawAmbientes();
+}
+
 let drawing = false;
+let exportando = false;
 function draw() {
-  if (drawing) return;
+  if (drawing || exportando) return;
   drawing = true;
   try {
   syncSheet();
@@ -666,17 +687,106 @@ function draw() {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   applyWorld();
-
-  ctx.fillStyle = "#fbfcfe";
-  ctx.fillRect(px(0), py(Y0), u(W), u(D));
-
-  if (camada("show-vedacao")) drawVedacao();
-  if (camada("show-estrutura")) drawEstrutura();
-  if (camada("show-esquadrias")) drawEsquadrias();
-  if (camada("show-cotas")) drawCotas();
-  if (camada("show-ambientes")) drawAmbientes();
+  pintar();
   } finally {
     drawing = false;
+  }
+}
+
+function juntarBytes(partes) {
+  const total = partes.reduce((n, p) => n + p.length, 0);
+  const saida = new Uint8Array(total);
+  let i = 0;
+  for (const p of partes) {
+    saida.set(p, i);
+    i += p.length;
+  }
+  return saida;
+}
+
+function montarPdf(jpeg, pxW, pxH) {
+  const enc = new TextEncoder();
+  const partes = [];
+  let pos = 0;
+  const em = (dados) => {
+    const bytes = typeof dados === "string" ? enc.encode(dados) : dados;
+    partes.push(bytes);
+    pos += bytes.length;
+  };
+  const offsets = [0];
+  const objeto = (conteudo) => {
+    offsets.push(pos);
+    em(conteudo);
+  };
+  const paginaL = 595.28;
+  const paginaA = 841.89;
+  const margem = 28;
+  const escala = Math.min((paginaL - margem * 2) / pxW, (paginaA - margem * 2) / pxH);
+  const dw = (pxW * escala).toFixed(2);
+  const dh = (pxH * escala).toFixed(2);
+  const x = ((paginaL - pxW * escala) / 2).toFixed(2);
+  const y = ((paginaA - pxH * escala) / 2).toFixed(2);
+  const desenho = `q\n${dw} 0 0 ${dh} ${x} ${y} cm\n/Im0 Do\nQ\n`;
+  em("%PDF-1.4\n");
+  objeto("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+  objeto("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+  objeto(`3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${paginaL} ${paginaA}] /Contents 4 0 R /Resources << /XObject << /Im0 5 0 R >> >> >>\nendobj\n`);
+  objeto(`4 0 obj\n<< /Length ${desenho.length} >>\nstream\n${desenho}endstream\nendobj\n`);
+  offsets.push(pos);
+  em("5 0 obj\n");
+  em(`<< /Type /XObject /Subtype /Image /Width ${pxW} /Height ${pxH} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpeg.length} >>\nstream\n`);
+  em(jpeg);
+  em("\nendstream\nendobj\n");
+  const xref = pos;
+  let tabela = "xref\n0 6\n0000000000 65535 f \n";
+  for (let n = 1; n <= 5; n++) tabela += `${String(offsets[n]).padStart(10, "0")} 00000 n \n`;
+  em(tabela);
+  em(`trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`);
+  return juntarBytes(partes);
+}
+
+async function baixarPdf() {
+  const botao = document.getElementById("btnPdf");
+  if (botao) botao.disabled = true;
+  const tela = canvas;
+  const ctxTela = ctx;
+  const vbTela = { ...vb };
+  const folha = document.createElement("canvas");
+  const cssH = Math.round(BASE_W * STAGE_H / STAGE_W);
+  folha.style.cssText = `position:fixed;left:-20000px;top:0;width:${BASE_W}px;height:${cssH}px;pointer-events:none;`;
+  document.body.appendChild(folha);
+  exportando = true;
+  try {
+    const larguraCss = folha.clientWidth || BASE_W;
+    const alturaCss = folha.clientHeight || cssH;
+    folha.width = Math.round(larguraCss * 2);
+    folha.height = Math.round(alturaCss * 2);
+    canvas = folha;
+    ctx = folha.getContext("2d");
+    vb = { x: 0, y: 0, w: STAGE_W, h: STAGE_H };
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    applyWorld();
+    pintar();
+    const jpeg = await new Promise((resolve, reject) => {
+      folha.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("sem imagem"))), "image/jpeg", 0.92);
+    });
+    const pdf = montarPdf(new Uint8Array(await jpeg.arrayBuffer()), folha.width, folha.height);
+    const url = URL.createObjectURL(new Blob([pdf], { type: "application/pdf" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "planta-casa.pdf";
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
+  } finally {
+    canvas = tela;
+    ctx = ctxTela;
+    vb = vbTela;
+    exportando = false;
+    folha.remove();
+    if (botao) botao.disabled = false;
+    draw();
   }
 }
 
@@ -700,15 +810,22 @@ function drawJanelaFolhaY(x, y, h, fill) {
   ctx.strokeRect(px(x), py(y), u(J4_T), u(h));
   ctx.restore();
 }
-function drawParJanelaAlta(vao, yPilar, yColuna) {
+function posParJanela(vao, yPilar, yColuna) {
   const sobe = yPilar > yColuna;
   const fixaY = sobe ? yPilar - vao.fixa : yPilar;
   const movelY = sobe ? yColuna : yColuna - vao.movel;
   const dir = sobe ? 1 : -1;
+  return { fixaY, movelY, dir };
+}
+function drawParJanelaAlta(vao, yPilar, yColuna) {
+  const { fixaY, movelY, dir } = posParJanela(vao, yPilar, yColuna);
   drawJanelaFolhaY(JB_X_FIXA, fixaY, vao.fixa, J_FILL_FIXA);
   drawJanelaFolhaY(JB_X_FIXA - J4_T, movelY, vao.movel, J_FILL_MOVEL);
   const origem = dir > 0 ? movelY : movelY + vao.movel;
   setaEsquadria(JB_X_FIXA - J4_T / 2, origem + dir * vao.movel * 0.38, 0, dir);
+}
+function medidasParJanelaAlta(vao, yPilar, yColuna) {
+  const { fixaY, movelY, dir } = posParJanela(vao, yPilar, yColuna);
   drawDim(6.22, fixaY, 6.22, fixaY + vao.fixa, `fixa ${fmt(vao.fixa)} m`, COR_COTA);
   drawDim(6.68, movelY, 6.68, movelY + vao.movel, `móvel ${fmt(vao.movel)} m`, COR_COTA);
   const sobreY = dir > 0
@@ -720,7 +837,6 @@ function drawJanelasParedeB() {
   drawParJanelaAlta(JB_BAIXO, JB_BAIXO.y0, JB_BAIXO.y1);
   drawParJanelaAlta(JB_CIMA, JB_CIMA.y1, JB_CIMA.y0);
   drawJanelaFolhaY(JB_X_FIXA, JENT_Y0, JENT_Y1 - JENT_Y0, J_FILL_FIXA);
-  drawDim(6.22, JENT_Y0, 6.22, JENT_Y1, `fixa ${fmtFolha(JENT_Y1 - JENT_Y0)} m`, COR_COTA);
 }
 function drawJanelaAltaFrente() {
   drawJanelaFolha(J4_X0, J4_Y_FIXA, J4_F, J_FILL_FIXA);
@@ -729,13 +845,6 @@ function drawJanelaAltaFrente() {
   drawJanelaFolha(J4_MOV_R_FECHADA, J4_Y_MOVEL, J4_M, J_FILL_MOVEL);
   setaEsquadria(J4_MOV_L_FECHADA + J4_M * 0.62, J4_Y_MOVEL + J4_T / 2, -1, 0);
   setaEsquadria(J4_MOV_R_FECHADA + J4_M * 0.38, J4_Y_MOVEL + J4_T / 2, 1, 0);
-  const vão0 = J4_X0 + J4_F + J4_SOBRA;
-  const vão1 = J4_X1 - J4_F - J4_SOBRA;
-  drawDim(J4_X0, 4.72, J4_X0 + J4_F, 4.72, `fixa ${fmt(J4_F)} m`, COR_COTA);
-  drawDim(J4_MOV_L_FECHADA, 5.02, J4_MOV_L_FECHADA + J4_M, 5.02, `móvel ${fmt(J4_M)} m`, COR_COTA);
-  drawDim(vão0, 5.40, vão1, 5.40, `vão ${fmt3(vão1 - vão0)} m`, COR_COTA);
-  drawUpright("10 cm", J4_X0 + J4_F + J4_SOBRA / 2, 4.52, COR_COTA, 10, "600");
-  drawUpright("10 cm", J4_X1 - J4_F - J4_SOBRA / 2, 4.52, COR_COTA, 10, "600");
 }
 function drawEntradaVidro() {
   ctx.save();
@@ -756,15 +865,6 @@ function drawEntradaVidro() {
   ctx.stroke();
   ctx.restore();
   setaEsquadria(ENT_X + ENT_FOLHA_T / 2, ENT_FECHADA_Y + 0.18, 0, 1);
-  const entFim = ENT_FECHADA_Y + ENT_FOLHA;
-  if (ENT_PAREDE - entFim >= 0.01) {
-    drawDim(7.15, entFim, 7.15, ENT_PAREDE, `${fmt(ENT_PAREDE - entFim)} m`, COR_COTA);
-  }
-  drawDim(6.95, ENT_FECHADA_Y, 6.95, entFim, `folha ${fmt3(ENT_FOLHA)} m`, COR_COTA);
-  drawDim(6.35, ENT_FECHADA_Y, 6.35, ENT_ABERTA_Y, `vão ${fmt3(ENT_PASSAGEM)} m`, COR_COTA);
-  drawDim(6.65, ENT_ABERTA_Y, 6.65, ENT_PAREDE, `${fmt(ENT_PUXADOR)} m`, COR_COTA);
-  drawDim(5.95, ENT_ABERTA_Y, 5.95, ENT_ABERTA_FIM, "arraste", COR_COTA);
-  drawUpright(`${fmt3(ENT_ABERTA_FIM)} m`, 5.95, ENT_ABERTA_FIM + 0.16, COR_COTA, 11, "600");
 }
 function drawFolha(box, fill, dash) {
   ctx.save();
@@ -798,6 +898,27 @@ function drawTresFolhas() {
   drawFolha(F3_PUX, "rgba(36,87,197,0.12)");
   setaParaParede(F3_CENTRO.x + F3_L * 0.62, F3_CENTRO.y + F3_T / 2);
   setaParaParede(F3_PUX.x + F3_L1 * 0.62, F3_PUX.y + F3_T / 2);
+}
+function drawMedidasEsquadrias() {
+  medidasParJanelaAlta(JB_BAIXO, JB_BAIXO.y0, JB_BAIXO.y1);
+  medidasParJanelaAlta(JB_CIMA, JB_CIMA.y1, JB_CIMA.y0);
+  drawDim(6.22, JENT_Y0, 6.22, JENT_Y1, `fixa ${fmtFolha(JENT_Y1 - JENT_Y0)} m`, COR_COTA);
+  drawDim(J4_X0, 4.72, J4_X0 + J4_F, 4.72, `fixa ${fmt(J4_F)} m`, COR_COTA);
+  drawDim(J4_MOV_L_FECHADA, 5.02, J4_MOV_L_FECHADA + J4_M, 5.02, `móvel ${fmt(J4_M)} m`, COR_COTA);
+  const vão0 = J4_X0 + J4_F + J4_SOBRA;
+  const vão1 = J4_X1 - J4_F - J4_SOBRA;
+  drawDim(vão0, 5.40, vão1, 5.40, `vão ${fmt3(vão1 - vão0)} m`, COR_COTA);
+  drawUpright("10 cm", J4_X0 + J4_F + J4_SOBRA / 2, 4.52, COR_COTA, 10, "600");
+  drawUpright("10 cm", J4_X1 - J4_F - J4_SOBRA / 2, 4.52, COR_COTA, 10, "600");
+  const entFim = ENT_FECHADA_Y + ENT_FOLHA;
+  if (ENT_PAREDE - entFim >= 0.01) {
+    drawDim(7.15, entFim, 7.15, ENT_PAREDE, `${fmt(ENT_PAREDE - entFim)} m`, COR_COTA);
+  }
+  drawDim(6.95, ENT_FECHADA_Y, 6.95, entFim, `folha ${fmt3(ENT_FOLHA)} m`, COR_COTA);
+  drawDim(6.35, ENT_FECHADA_Y, 6.35, ENT_ABERTA_Y, `vão ${fmt3(ENT_PASSAGEM)} m`, COR_COTA);
+  drawDim(6.65, ENT_ABERTA_Y, 6.65, ENT_PAREDE, `${fmt(ENT_PUXADOR)} m`, COR_COTA);
+  drawDim(5.95, ENT_ABERTA_Y, 5.95, ENT_ABERTA_FIM, "arraste", COR_COTA);
+  drawUpright(`${fmt3(ENT_ABERTA_FIM)} m`, 5.95, ENT_ABERTA_FIM + 0.16, COR_COTA, 11, "600");
   drawDim(0, 4.62, F3_L, 4.62, `fixa ${fmt(F3_L)} m`, F3_COR);
   drawDim(F3_CENTRO.x, 4.88, F3_CENTRO.x + F3_L, 4.88, `central ${fmt(F3_L)} m`, F3_COR);
   drawDim(F3_PUX.x, 5.14, F3_PUX.x + F3_L1, 5.14, `puxador ${fmt(F3_L1)} m`, F3_COR);
@@ -922,6 +1043,10 @@ ligaCamada(chkVedacao, "show-vedacao");
 ligaCamada(chkEsquadrias, "show-esquadrias");
 ligaCamada(chkCotas, "show-cotas");
 ligaCamada(chkAmbientes, "show-ambientes");
+ligaCamada(document.getElementById("chkMedidasEstrutura"), "show-medidas-estrutura");
+ligaCamada(document.getElementById("chkMedidasVedacao"), "show-medidas-vedacao");
+ligaCamada(document.getElementById("chkMedidasEsquadrias"), "show-medidas-esquadrias");
+document.getElementById("btnPdf").addEventListener("click", () => { baixarPdf(); });
 
 const viewport = document.getElementById("viewport");
 const sheet = document.getElementById("sheet");

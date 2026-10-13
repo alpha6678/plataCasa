@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Planta da Casa — 7,45 × 10,20 m</title>
-  <link rel="stylesheet" href="styles.css?v=9" />
+  <link rel="stylesheet" href="styles.css?v=11" />
 </head>
 <body>
   <header class="topbar">
@@ -14,12 +14,22 @@
     </div>
     <div class="controls">
       <div class="layer-checks" role="group" aria-label="Folhas">
-        <label class="layer-check" data-folha="estrutura" title="Eixos em traço-ponto, pilares 27×14 cm e cotas de eixo a eixo"><input type="checkbox" id="chkEstrutura" checked> Estrutura</label>
-        <label class="layer-check" data-folha="vedacao" title="Paredes com 14 cm, envelope A/B/C, coluna falsa e trechos da parede B"><input type="checkbox" id="chkVedacao" checked> Vedação</label>
-        <label class="layer-check" data-folha="esquadrias" title="Portas de giro, vidro da entrada, três folhas e janela alta"><input type="checkbox" id="chkEsquadrias" checked> Esquadrias</label>
+        <div class="layer-check" data-folha="estrutura">
+          <label title="Eixos em traço-ponto e pilares 27×14 cm"><input type="checkbox" id="chkEstrutura" checked> Estrutura</label>
+          <label class="layer-medidas" title="Cotas de eixo a eixo e os totais 7,45 m e 10,20 m"><input type="checkbox" id="chkMedidasEstrutura" checked> medidas</label>
+        </div>
+        <div class="layer-check" data-folha="vedacao">
+          <label title="Paredes com 14 cm, envelope A/B/C, coluna falsa e trechos da parede B"><input type="checkbox" id="chkVedacao" checked> Vedação</label>
+          <label class="layer-medidas" title="Trechos da parede B: entrada, janela e trecho cego"><input type="checkbox" id="chkMedidasVedacao" checked> medidas</label>
+        </div>
+        <div class="layer-check" data-folha="esquadrias">
+          <label title="Portas de giro, vidro da entrada, três folhas e janelas"><input type="checkbox" id="chkEsquadrias" checked> Esquadrias</label>
+          <label class="layer-medidas" title="Folha, vão, sobreposição e as demais cotas de cada esquadria"><input type="checkbox" id="chkMedidasEsquadrias" checked> medidas</label>
+        </div>
         <label class="layer-check" data-folha="cotas" title="Cotas de face a face da arquitetura"><input type="checkbox" id="chkCotas" checked> Cotas</label>
         <label class="layer-check" data-folha="ambientes" title="Nomes dos ambientes: cozinha, banheiro, quartos e copa/sala"><input type="checkbox" id="chkAmbientes" checked> Ambientes</label>
       </div>
+      <button id="btnPdf" type="button">Baixar PDF</button>
     </div>
   </header>
 
@@ -54,6 +64,6 @@
   </footer>
   </main>
 
-  <script src="app.js?v=30"></script>
+  <script src="app.js?v=32"></script>
 </body>
 </html>
