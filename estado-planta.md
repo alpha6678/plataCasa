@@ -126,3 +126,23 @@ Nomes dentro do vão. Corredor, hall e a faixa da entrada não levam letra.
 ## O que não entrou numa folha
 
 Não há grade. Não há sexta folha: cotas de eixo ficam na Estrutura, cotas de face na folha Cotas, e as cotas de cada esquadria ficam com a peça.
+
+## Alturas
+
+As paredes acrescentadas sobem do chão (0) até a viga, a **2,55 m**. Dentro dessas áreas, do chão até a laje são **2,85 m**. Ficam registradas as duas alturas.
+
+O topo já usado nas janelas altas, **2,55 m**, é a viga. O **2,85 m** é o interior, até a laje.
+
+## Parede da coluna falsa
+
+No trecho de **3,17 m** (eixos y 7,15 a 10,32, entre os dois pilares, com a coluna falsa no meio):
+
+- De **0 a 1,40 m** a alvenaria já está construída.
+- De **1,40 m a 2,55 m** entram as janelas, no mesmo intervalo da janela alta.
+- Cada lado da coluna falsa leva duas folhas, com a mesma sobra da janela da frente: **10 cm** no vão (7 cm de puxador + 3 cm de sobreposição). A folha móvel corre para fora da coluna falsa, em direção ao pilar. A outra folha fica fixa junto ao pilar.
+- Abaixo da coluna falsa, vão de face a face **1,365 m** (face do pilar y 7,285 até y 8,65): folha fixa **0,65 m** junto ao pilar e folha móvel **0,75 m** junto à coluna falsa. A sobreposição de 3 cm não fecha em centímetro inteiro; fica **3,5 cm**.
+- Acima da coluna falsa, vão de face a face **1,265 m** (y 8,92 até a face do pilar y 10,185): folha fixa **0,60 m** junto ao pilar e folha móvel **0,70 m** junto à coluna falsa. A sobreposição fica **3,5 cm**.
+
+O trecho abaixo desse pilar, na parede de **1,238 m** (y 5,7775 a 7,015), é o que a folha da entrada cobre quando abre. Ali também há vidro de **1,40 m a 2,55 m**, uma folha só, fixa, sem correr. O vidro ocupa o intervalo livre entre as faces dos pilares, y **6,0475–7,015**, com **0,9675 m**.
+
+A janela de quatro folhas da frente da copa/sala (x 3,535 a 7,18) permanece como está. Abaixo dela, de **0 a 1,40 m**, a alvenaria segue o mesmo padrão da janela alta. Esse vão é parte parede, parte janela.

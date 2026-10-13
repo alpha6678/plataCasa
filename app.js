@@ -1,18 +1,21 @@
 // Planta da Casa — folhas de papel vegetal sobre o mesmo desenho.
-// Escala: 1 m = 60 px no palco · origem (OX, OY) = (60, 80)
+// Escala: 1 m = 60 px no palco. A origem (OX, OY) deixa folga para as cotas
+// externas; a folga horizontal é igual dos dois lados para a laje ficar no centro.
 // Eixos: x = largura (0 a 7,45), y = profundidade (frente y = 4,00, fundo y = 14,20)
 // Vista inicial: parede A em cima, frente à esquerda.
 // Folhas: Estrutura, Vedação, Esquadrias, Cotas, Ambientes.
 // Cota vermelha = eixo a eixo. Cota azul = face a face.
 
 const S = 60;
-const OX = 60;
-const OY = 80;
 const W = 7.45;
 const Y0 = 4.00;
 const H = 14.20;
 const D = H - Y0;
-const STAGE_W = 600;
+// "3,88 m" e "10,20 m" ficam à esquerda da parede A; "3,20 (entrada)" à direita.
+const MARGEM_X = 150;
+const OX = MARGEM_X;
+const OY = 80;
+const STAGE_W = Math.round(MARGEM_X + W * S + MARGEM_X);
 const STAGE_H = 780;
 const WALL_T = 0.14; // 14 cm, lado menor da pilastra
 const DIV_COLOR = "#1f59d8";
@@ -136,6 +139,19 @@ const J4_Y_MOVEL = 4.07;
 const J4_COR = "#4a4a4a";
 const J4_MOV_L_FECHADA = J4_MEIO + 0.015 - J4_M;
 const J4_MOV_R_FECHADA = J4_MEIO - 0.015;
+// Janelas altas da parede B e a folha fixa atrás da porta da entrada.
+// Corte a 1,50 m; peitoril 1,40 m, topo 2,55 m. O peitoril fica abaixo do corte:
+// a alvenaria se interrompe e o caixilho é a linha fina, fechado uma vez.
+// Duas folhas, sobra da frente: móvel = fixa + 10 cm. Com 3 cm a conta não fecha
+// em centímetro inteiro; a sobreposição fica em 3,5 cm. A fixa encosta no pilar,
+// a móvel na coluna falsa, sem entrar em nenhum dos dois.
+const JB_X_FIXA = 7.38;
+const JB_BAIXO = { y0: 7.285, y1: 8.65, fixa: 0.65, movel: 0.75 };
+const JB_CIMA = { y0: 8.92, y1: 10.185, fixa: 0.60, movel: 0.70 };
+const JENT_Y0 = 6.0475;
+const JENT_Y1 = 7.015;
+const J_FILL_FIXA = "rgba(74,74,74,0.18)";
+const J_FILL_MOVEL = "rgba(74,74,74,0)";
 const columns = [
   { x: 3.40, y: 4.00, orient: "x", vao: "vão frontal" },
   { x: 7.45, y: 4.00, orient: "x", vao: "vão frontal (canto B∩D)" },
@@ -154,8 +170,10 @@ const VB_ROTATED = { x: 0, y: 0, w: STAGE_H, h: STAGE_W };
 let VB_INIT = VB_NORMAL;
 let vb = { ...VB_INIT };
 const TEXTO_MAX = 15;
-const BASE_W = 846;
+const PX_POR_PALCO = 846 / 600;
+const BASE_W = Math.round(STAGE_W * PX_POR_PALCO);
 let zoom = 1;
+let zoomManual = false;
 let rotated = false;
 let flipV = true;
 
@@ -169,6 +187,15 @@ let hoverPoint = null;
 
 function fmt(n) { return n.toFixed(2).replace(".", ","); }
 function fmt3(n) { return n.toFixed(3).replace(".", ","); }
+function fmtFolha(m) {
+  let s = (Math.round(m * 10000) / 10000).toFixed(4);
+  s = s.replace(/0+$/, "").replace(/\.$/, "");
+  const [i, f = ""] = s.split(".");
+  return `${i},${f.padEnd(2, "0")}`;
+}
+function sobreVao(v) {
+  return v.fixa + v.movel - (v.y1 - v.y0);
+}
 function rotuloCm(m) {
   const cm = Math.round(m * 1000) / 10;
   const texto = Number.isInteger(cm) ? String(cm) : cm.toFixed(1).replace(".", ",");
@@ -235,7 +262,13 @@ function renderJanelas() {
   const lista = document.getElementById("janelaList");
   if (!lista) return;
   lista.innerHTML = "";
-  linhaLista(lista, `Frente da copa/sala: 2× folha fixa ${fmt(J4_F)} × ${fmt(JANELA_ALTURA)} m · 2× folha móvel ${fmt(J4_M)} × ${fmt(JANELA_ALTURA)} m`);
+  const altura = fmt(JANELA_ALTURA);
+  linhaLista(lista, `Frente da copa/sala: 2× folha fixa ${fmt(J4_F)} × ${altura} m · 2× folha móvel ${fmt(J4_M)} × ${altura} m`);
+  linhaLista(lista, `Parede B, abaixo da coluna falsa (y ${fmtFolha(JB_BAIXO.y0)}–${fmtFolha(JB_BAIXO.y1)}): 1× folha fixa ${fmt(JB_BAIXO.fixa)} × ${altura} m · 1× folha móvel ${fmt(JB_BAIXO.movel)} × ${altura} m · sobreposição ${rotuloCm(sobreVao(JB_BAIXO))}`);
+  linhaLista(lista, `Parede B, acima da coluna falsa (y ${fmtFolha(JB_CIMA.y0)}–${fmtFolha(JB_CIMA.y1)}): 1× folha fixa ${fmt(JB_CIMA.fixa)} × ${altura} m · 1× folha móvel ${fmt(JB_CIMA.movel)} × ${altura} m · sobreposição ${rotuloCm(sobreVao(JB_CIMA))}`);
+  linhaLista(lista, `Atrás da porta da entrada (y ${fmtFolha(JENT_Y0)}–${fmtFolha(JENT_Y1)}): 1× folha fixa ${fmtFolha(JENT_Y1 - JENT_Y0)} × ${altura} m · sem correr`);
+  linhaLista(lista, `Sob a frente (x 3,535–7,18), sob as duas janelas da parede B e sob a folha fixa atrás da porta: de 0 a 1,40 m alvenaria, como as paredes · de 1,40 m a 2,55 m vidro · o vão da frente continua parte parede, parte janela`);
+  linhaLista(lista, `Paredes acrescentadas: do chão até a viga, 2,55 m · dentro dessas áreas, do chão até a laje, 2,85 m`);
 }
 
 function stageToUser(sx, sy) {
@@ -422,6 +455,32 @@ function ehJanelaDaFrente(p) {
     && Math.min(p.x1, p.x2) < 3.6 && Math.max(p.x1, p.x2) > 7.1;
 }
 
+function ehVidroFixoAtrasPorta(p) {
+  const x = (p.x1 + p.x2) / 2;
+  const y0 = Math.min(p.y1, p.y2);
+  const y1 = Math.max(p.y1, p.y2);
+  return Math.abs(p.x1 - p.x2) < 0.02 && Math.abs(x - 7.38) < 0.04 && y0 < 5.9 && y1 > 6.9;
+}
+
+function desenhaForaDosCortes(y0, y1, cortes, desenha) {
+  const marcas = [y0, y1];
+  for (const [a, b] of cortes) {
+    const i0 = Math.max(y0, Math.min(a, b));
+    const i1 = Math.min(y1, Math.max(a, b));
+    if (i1 - i0 < 1e-6) continue;
+    marcas.push(i0, i1);
+  }
+  marcas.sort((a, b) => a - b);
+  for (let i = 0; i < marcas.length - 1; i++) {
+    const a = marcas[i];
+    const b = marcas[i + 1];
+    if (b - a < 0.004) continue;
+    const meio = (a + b) / 2;
+    const cortado = cortes.some(([c0, c1]) => meio > Math.min(c0, c1) && meio < Math.max(c0, c1));
+    if (!cortado) desenha(a, b);
+  }
+}
+
 function drawEixos() {
   const folga = 0.22;
   ctx.save();
@@ -496,10 +555,24 @@ function drawVedacao() {
     if (!naParedeB || w.dash) continue;
     const y0 = Math.min(w.y1, w.y2);
     const y1 = Math.max(w.y1, w.y2);
+    if (w.id === "B-jan") {
+      desenhaForaDosCortes(y0, y1, [[JB_BAIXO.y0, JB_BAIXO.y1], [JB_CIMA.y0, JB_CIMA.y1]], (a, b) => {
+        blocoParede(W - WALL_T, a, WALL_T, b - a);
+      });
+      continue;
+    }
     blocoParede(W - WALL_T, y0, WALL_T, y1 - y0);
   }
   for (const p of paredes) {
     if (ehJanelaDaFrente(p)) continue;
+    if (ehVidroFixoAtrasPorta(p)) {
+      const y0 = Math.min(p.y1, p.y2);
+      const y1 = Math.max(p.y1, p.y2);
+      desenhaForaDosCortes(y0, y1, [[JENT_Y0, JENT_Y1]], (a, b) => {
+        faixaCentral(p.x1, a, p.x2, b, p.espessura || WALL_T);
+      });
+      continue;
+    }
     faixaCentral(p.x1, p.y1, p.x2, p.y2, p.espessura || WALL_T);
   }
   drawColunaFalsa();
@@ -512,6 +585,7 @@ function drawEsquadrias() {
   drawEntradaVidro();
   drawTresFolhas();
   drawJanelaAltaFrente();
+  drawJanelasParedeB();
   for (const porta of portas) drawPorta(porta, "#4a4a4a");
   if (startPoint && hoverPoint && !samePoint(startPoint, hoverPoint)) {
     drawPorta(
@@ -577,6 +651,7 @@ function draw() {
   if (drawing) return;
   drawing = true;
   try {
+  syncSheet();
   placeCanvas();
   syncView();
   const dpr = window.devicePixelRatio || 1;
@@ -615,11 +690,43 @@ function drawJanelaFolha(x, y, w, fill, dash) {
   ctx.strokeRect(px(x), py(y), u(w), u(J4_T));
   ctx.restore();
 }
+function drawJanelaFolhaY(x, y, h, fill) {
+  ctx.save();
+  ctx.fillStyle = fill;
+  ctx.strokeStyle = J4_COR;
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([]);
+  ctx.fillRect(px(x), py(y), u(J4_T), u(h));
+  ctx.strokeRect(px(x), py(y), u(J4_T), u(h));
+  ctx.restore();
+}
+function drawParJanelaAlta(vao, yPilar, yColuna) {
+  const sobe = yPilar > yColuna;
+  const fixaY = sobe ? yPilar - vao.fixa : yPilar;
+  const movelY = sobe ? yColuna : yColuna - vao.movel;
+  const dir = sobe ? 1 : -1;
+  drawJanelaFolhaY(JB_X_FIXA, fixaY, vao.fixa, J_FILL_FIXA);
+  drawJanelaFolhaY(JB_X_FIXA - J4_T, movelY, vao.movel, J_FILL_MOVEL);
+  const origem = dir > 0 ? movelY : movelY + vao.movel;
+  setaEsquadria(JB_X_FIXA - J4_T / 2, origem + dir * vao.movel * 0.38, 0, dir);
+  drawDim(6.22, fixaY, 6.22, fixaY + vao.fixa, `fixa ${fmt(vao.fixa)} m`, COR_COTA);
+  drawDim(6.68, movelY, 6.68, movelY + vao.movel, `móvel ${fmt(vao.movel)} m`, COR_COTA);
+  const sobreY = dir > 0
+    ? (movelY + vao.movel + fixaY) / 2
+    : (fixaY + vao.fixa + movelY) / 2;
+  drawUpright(rotuloCm(sobreVao(vao)), 6.92, sobreY, COR_COTA, 10, "600");
+}
+function drawJanelasParedeB() {
+  drawParJanelaAlta(JB_BAIXO, JB_BAIXO.y0, JB_BAIXO.y1);
+  drawParJanelaAlta(JB_CIMA, JB_CIMA.y1, JB_CIMA.y0);
+  drawJanelaFolhaY(JB_X_FIXA, JENT_Y0, JENT_Y1 - JENT_Y0, J_FILL_FIXA);
+  drawDim(6.22, JENT_Y0, 6.22, JENT_Y1, `fixa ${fmtFolha(JENT_Y1 - JENT_Y0)} m`, COR_COTA);
+}
 function drawJanelaAltaFrente() {
-  drawJanelaFolha(J4_X0, J4_Y_FIXA, J4_F, "rgba(74,74,74,0.18)");
-  drawJanelaFolha(J4_X1 - J4_F, J4_Y_FIXA, J4_F, "rgba(74,74,74,0.18)");
-  drawJanelaFolha(J4_MOV_L_FECHADA, J4_Y_MOVEL, J4_M, "rgba(74,74,74,0)");
-  drawJanelaFolha(J4_MOV_R_FECHADA, J4_Y_MOVEL, J4_M, "rgba(74,74,74,0)");
+  drawJanelaFolha(J4_X0, J4_Y_FIXA, J4_F, J_FILL_FIXA);
+  drawJanelaFolha(J4_X1 - J4_F, J4_Y_FIXA, J4_F, J_FILL_FIXA);
+  drawJanelaFolha(J4_MOV_L_FECHADA, J4_Y_MOVEL, J4_M, J_FILL_MOVEL);
+  drawJanelaFolha(J4_MOV_R_FECHADA, J4_Y_MOVEL, J4_M, J_FILL_MOVEL);
   setaEsquadria(J4_MOV_L_FECHADA + J4_M * 0.62, J4_Y_MOVEL + J4_T / 2, -1, 0);
   setaEsquadria(J4_MOV_R_FECHADA + J4_M * 0.38, J4_Y_MOVEL + J4_T / 2, 1, 0);
   const vão0 = J4_X0 + J4_F + J4_SOBRA;
@@ -822,10 +929,27 @@ const sheet = document.getElementById("sheet");
 function baseSize() {
   return { w: BASE_W, h: BASE_W * STAGE_H / STAGE_W };
 }
-function syncSheet() {
+function medidaFolha() {
   const b = baseSize();
-  sheet.style.width = `${b.w * zoom}px`;
-  sheet.style.height = `${b.h * zoom}px`;
+  const sheetW = b.w * zoom;
+  const sheetH = b.h * zoom;
+  const padX = Math.max(0, (viewport.clientWidth - sheetW) / 2);
+  return { sheetW, sheetH, padX };
+}
+function syncSheet() {
+  const m = medidaFolha();
+  sheet.style.width = `${m.sheetW}px`;
+  sheet.style.height = `${m.sheetH}px`;
+  sheet.style.marginLeft = `${m.padX}px`;
+  sheet.style.marginRight = `${m.padX}px`;
+  return m;
+}
+function encaixarNaPagina() {
+  const largura = viewport.clientWidth;
+  if (largura < 40) return;
+  const util = Math.max(1, largura - 24);
+  const b = baseSize();
+  zoom = b.w > util ? util / b.w : 1;
 }
 function placeCanvas() {
   const port = viewport.getBoundingClientRect();
@@ -843,29 +967,30 @@ function placeCanvas() {
   canvas.style.visibility = w < 1 || h < 1 ? "hidden" : "visible";
 }
 function syncView() {
-  const b = baseSize();
-  const sheetW = Math.max(1, b.w * zoom);
-  const sheetH = Math.max(1, b.h * zoom);
+  const m = medidaFolha();
+  const sheetW = Math.max(1, m.sheetW);
+  const sheetH = Math.max(1, m.sheetH);
   const viewW = canvas.clientWidth || 1;
   const viewH = canvas.clientHeight || 1;
-  vb.x = (Math.max(0, viewport.scrollLeft) / sheetW) * STAGE_W;
-  vb.y = (Math.max(0, viewport.scrollTop) / sheetH) * STAGE_H;
+  const left = Math.max(0, viewport.scrollLeft - m.padX);
+  const top = Math.max(0, viewport.scrollTop);
+  vb.x = (left / sheetW) * STAGE_W;
+  vb.y = (top / sheetH) * STAGE_H;
   vb.w = (viewW / sheetW) * STAGE_W;
   vb.h = (viewH / sheetH) * STAGE_H;
 }
 function applyZoom(next, clientX, clientY) {
+  zoomManual = true;
   const rect = viewport.getBoundingClientRect();
-  const ox = clientX - rect.left;
-  const oy = clientY - rect.top;
-  const b = baseSize();
-  const prevW = b.w * zoom;
-  const prevH = b.h * zoom;
-  const relX = (viewport.scrollLeft + ox) / prevW;
-  const relY = (viewport.scrollTop + oy) / prevH;
+  const localX = clientX - rect.left;
+  const localY = clientY - rect.top;
+  const prev = medidaFolha();
+  const relX = (viewport.scrollLeft + localX - prev.padX) / prev.sheetW;
+  const relY = (viewport.scrollTop + localY) / prev.sheetH;
   zoom = Math.max(1e-4, next);
-  syncSheet();
-  viewport.scrollLeft = relX * b.w * zoom - ox;
-  viewport.scrollTop = relY * b.h * zoom - oy;
+  const novo = syncSheet();
+  viewport.scrollLeft = relX * novo.sheetW - localX + novo.padX;
+  viewport.scrollTop = relY * novo.sheetH - localY;
   draw();
 }
 
@@ -978,8 +1103,12 @@ legendItems.forEach((it) => {
   legendList.appendChild(li);
 });
 
+function aoRedimensionar() {
+  if (!zoomManual) encaixarNaPagina();
+  draw();
+}
 if (typeof ResizeObserver !== "undefined") {
-  new ResizeObserver(() => draw()).observe(viewport);
+  new ResizeObserver(() => aoRedimensionar()).observe(viewport);
 }
 for (let i = portas.length - 1; i >= 0; i--) {
   const p = portas[i];
@@ -990,8 +1119,9 @@ for (let i = portas.length - 1; i >= 0; i--) {
 persistPortas();
 renderPortas();
 renderJanelas();
+encaixarNaPagina();
 applyStage();
-window.addEventListener("resize", () => draw());
+window.addEventListener("resize", () => aoRedimensionar());
 if (window.visualViewport) {
-  window.visualViewport.addEventListener("resize", () => draw());
+  window.visualViewport.addEventListener("resize", () => aoRedimensionar());
 }
