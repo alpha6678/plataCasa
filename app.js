@@ -38,7 +38,7 @@ const PORTAS = [
 // Vidro de correr da entrada, uma folha, rente à face interna da parede B.
 // Vão entre a face da coluna da frente (y = 4,14) e a face da parede (y = 5,7775).
 // A folha é 5 cm maior que esse vão. Aberta, o puxador ocupa 20 cm da área sem parede.
-const VIDRO_COR = "#0c7f96";
+const VIDRO_COR = "#4a4a4a";
 const ENT_COL_FRENTE = 4.14;
 const ENT_PAREDE = 5.7775;
 const ENT_PUXADOR = 0.20;
@@ -104,21 +104,22 @@ function columnBox(c) {
   if (x < 0) x = 0;
   return { x, y, w, h };
 }
-// Três folhas na frente, da parede A até a coluna (3,40; 4,00).
-// Fechadas: 3 cm de sobreposição em cada encontro.
-// Folhas arredondadas para cima: 111 cm, 111 cm e 116 cm. O extra fica sobre a coluna.
+// Três folhas na frente, da parede A até a face da coluna (x = 3,265). Não entram no pilar.
+// Fechadas: fixa e central se encontram em 3 cm. A última sobreposição fica em 2,5 cm
+// para o puxador terminar na face x = 3,265, sem entrar no pilar e sem crescer a folha.
+// Fixa e central 1,09 m; puxador 1,14 m.
 // Abertas: a central e a do puxador correm até ficarem rentes à parede A. A terceira é fixa.
 // As três camadas ficam no eixo da coluna (14 cm, de y 4,00 a 4,14), não para dentro do cômodo.
 const F3_FACE = 3.265;
 const F3_OVER = 0.03;
-const F3_L = 1.11;
-const F3_L1 = 1.16;
+const F3_L = 1.09;
+const F3_L1 = 1.14;
 const F3_T = 0.04;
 const F3_Y0 = 4.07 - (3 * F3_T) / 2;
 const F3_FIXA = { x: 0, w: F3_L, y: F3_Y0 };
 const F3_CENTRO = { x: F3_L - F3_OVER, w: F3_L, y: F3_Y0 + F3_T };
-const F3_PUX = { x: 2 * F3_L - 2 * F3_OVER, w: F3_L1, y: F3_Y0 + 2 * F3_T };
-const F3_COR = "#2457c5";
+const F3_PUX = { x: F3_FACE - F3_L1, w: F3_L1, y: F3_Y0 + 2 * F3_T };
+const F3_COR = "#4a4a4a";
 // Janela alta na parede da frente, entre as faces das colunas (3,535 a 7,18 = 3,645 m).
 // Duas fixas nas pontas e duas móveis que se encontram no centro.
 // Aberta, cada móvel deixa 10 cm no vão: 7 cm de puxador + 3 cm de sobreposição.
@@ -132,7 +133,7 @@ const J4_MEIO = (J4_X0 + J4_X1) / 2;
 const J4_T = 0.04;
 const J4_Y_FIXA = 4.07 - J4_T;
 const J4_Y_MOVEL = 4.07;
-const J4_COR = "#0e7a4a";
+const J4_COR = "#4a4a4a";
 const J4_MOV_L_FECHADA = J4_MEIO + 0.015 - J4_M;
 const J4_MOV_R_FECHADA = J4_MEIO - 0.015;
 const columns = [
@@ -146,21 +147,16 @@ const columns = [
 
 const canvas = document.getElementById("planta");
 const ctx = canvas.getContext("2d");
-const infoPanel = document.getElementById("infoPanel");
 const JANELA_ALTURA = 1.15;
 
 const VB_NORMAL = { x: 0, y: 0, w: STAGE_W, h: STAGE_H };
 const VB_ROTATED = { x: 0, y: 0, w: STAGE_H, h: STAGE_W };
-let VB_INIT = VB_ROTATED;
+let VB_INIT = VB_NORMAL;
 let vb = { ...VB_INIT };
 const TEXTO_MAX = 15;
-const DPR0 = window.devicePixelRatio || 1;
-function zoomPagina() {
-  const pinça = window.visualViewport ? window.visualViewport.scale : 1;
-  const navegador = (window.devicePixelRatio || 1) / DPR0;
-  return Math.max(pinça, navegador, 0.01);
-}
-let rotated = true;
+const BASE_W = 846;
+let zoom = 1;
+let rotated = false;
 let flipV = true;
 
 const paredes = loadParedes();
@@ -173,21 +169,14 @@ let hoverPoint = null;
 
 function fmt(n) { return n.toFixed(2).replace(".", ","); }
 function fmt3(n) { return n.toFixed(3).replace(".", ","); }
-
-function showInfoPanel(html) {
-  if (!infoPanel) return;
-  infoPanel.innerHTML = html;
-  infoPanel.classList.add("has-info");
+function rotuloCm(m) {
+  const cm = Math.round(m * 1000) / 10;
+  const texto = Number.isInteger(cm) ? String(cm) : cm.toFixed(1).replace(".", ",");
+  return `${texto} cm`;
 }
+
 function camada(nome) {
   return document.body.classList.contains(nome);
-}
-function showHint() {
-  const texto = camada("show-esquadrias")
-    ? "Clique 1: início da folha da porta. Clique 2: fim. Porta de correr, uma folha."
-    : "Ative a folha Esquadrias para marcar portas.";
-  showInfoPanel(`<p class="hint">${texto}</p>`);
-  infoPanel.classList.remove("has-info");
 }
 
 function copiaDivisoes() {
@@ -278,14 +267,13 @@ function applyWorld() {
 
 function drawUpright(text, mx, my, fill, size, weight, align = "center") {
   const [ux, uy] = stageToUser(px(mx), py(my));
-  const scale = canvas.width / vb.w;
-  const cx = (ux - vb.x) * scale;
-  const cy = (uy - vb.y) * (canvas.height / vb.h);
-  const pageZoom = zoomPagina();
-  const natural = size * ((canvas.clientWidth || 1) / vb.w);
-  const naTela = Math.min(natural * pageZoom, TEXTO_MAX);
+  const scaleX = canvas.width / vb.w;
+  const scaleY = canvas.height / vb.h;
+  const cx = (ux - vb.x) * scaleX;
+  const cy = (uy - vb.y) * scaleY;
   const dpr = canvas.width / (canvas.clientWidth || 1);
-  const pxFonte = Math.max(8, (naTela / pageZoom) * dpr);
+  const cssPx = Math.min(size * (BASE_W / STAGE_W), TEXTO_MAX);
+  const pxFonte = Math.max(1, cssPx * dpr);
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.font = `${weight} ${pxFonte}px "Segoe UI", system-ui, sans-serif`;
@@ -293,7 +281,7 @@ function drawUpright(text, mx, my, fill, size, weight, align = "center") {
   ctx.textBaseline = "middle";
   ctx.lineJoin = "round";
   ctx.strokeStyle = "#ffffff";
-  ctx.lineWidth = Math.max(2, pxFonte * 0.22);
+  ctx.lineWidth = Math.max(1, pxFonte * 0.18);
   ctx.strokeText(text, cx, cy);
   ctx.fillStyle = fill;
   ctx.fillText(text, cx, cy);
@@ -313,10 +301,13 @@ function strokeMeters(x1, y1, x2, y2, color, width, dash) {
   ctx.restore();
 }
 
-const COR_EIXO = "#e04848";
-const COR_FACE = DIV_COLOR;
-const COR_GERAL = "#6b7280";
-const COR_PAREDE = "#2b3140";
+const COR_PILAR = "#1c1c1c";
+const COR_PAREDE = "#2a2a2a";
+const COR_EIXO = "#9aa0a6";
+const COR_COTA = "#1a56c4";
+const COR_FACE = COR_COTA;
+const COR_GERAL = COR_COTA;
+const COR_AMBIENTE = "#2f6b4f";
 const EIXOS_X = [0, 3.40, 7.45];
 const EIXOS_Y = [4.00, 7.15, 10.32, 14.20];
 
@@ -348,9 +339,50 @@ function drawDim(x1, y1, x2, y2, label, color) {
   }
 }
 
+const COR_PAREDE_MIOLO = "#e7eaee";
+const PAREDE_TRACO = 1.15;
+const PILAR_TRACO = 2.8;
+
+function hachuraNoClip(x0, y0, x1, y1) {
+  const minX = Math.min(x0, x1) - 2;
+  const maxX = Math.max(x0, x1) + 2;
+  const minY = Math.min(y0, y1) - 2;
+  const maxY = Math.max(y0, y1) + 2;
+  ctx.save();
+  ctx.clip();
+  ctx.beginPath();
+  ctx.strokeStyle = "rgba(42, 42, 42, 0.4)";
+  ctx.lineWidth = 0.55;
+  ctx.setLineDash([]);
+  const step = 5.5;
+  const altura = maxY - minY;
+  for (let x = minX - altura; x < maxX; x += step) {
+    ctx.moveTo(x, minY);
+    ctx.lineTo(x + altura, maxY);
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+
 function blocoParede(x, y, w, h) {
-  ctx.fillStyle = COR_PAREDE;
-  ctx.fillRect(px(x), py(y), u(w), u(h));
+  const x0 = px(x);
+  const y0 = py(y);
+  const rw = u(w);
+  const rh = u(h);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x0, y0, rw, rh);
+  ctx.fillStyle = COR_PAREDE_MIOLO;
+  ctx.fill();
+  hachuraNoClip(x0, y0, x0 + rw, y0 + rh);
+  ctx.beginPath();
+  ctx.rect(x0, y0, rw, rh);
+  ctx.strokeStyle = COR_PAREDE;
+  ctx.lineWidth = PAREDE_TRACO;
+  ctx.lineJoin = "miter";
+  ctx.setLineDash([]);
+  ctx.stroke();
+  ctx.restore();
 }
 
 // Faixa de 14 cm centrada no eixo gravado. As faces ficam a 7 cm de cada lado.
@@ -361,14 +393,28 @@ function faixaCentral(x1, y1, x2, y2, t) {
   if (len < 1e-6) return;
   const nx = (-dy / len) * (t / 2);
   const ny = (dx / len) * (t / 2);
+  const xs = [x1 + nx, x2 + nx, x2 - nx, x1 - nx].map(px);
+  const ys = [y1 + ny, y2 + ny, y2 - ny, y1 - ny].map(py);
   ctx.beginPath();
-  ctx.moveTo(px(x1 + nx), py(y1 + ny));
-  ctx.lineTo(px(x2 + nx), py(y2 + ny));
-  ctx.lineTo(px(x2 - nx), py(y2 - ny));
-  ctx.lineTo(px(x1 - nx), py(y1 - ny));
+  ctx.moveTo(xs[0], ys[0]);
+  ctx.lineTo(xs[1], ys[1]);
+  ctx.lineTo(xs[2], ys[2]);
+  ctx.lineTo(xs[3], ys[3]);
   ctx.closePath();
-  ctx.fillStyle = COR_PAREDE;
+  ctx.fillStyle = COR_PAREDE_MIOLO;
   ctx.fill();
+  hachuraNoClip(Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys));
+  ctx.beginPath();
+  ctx.moveTo(xs[0], ys[0]);
+  ctx.lineTo(xs[1], ys[1]);
+  ctx.lineTo(xs[2], ys[2]);
+  ctx.lineTo(xs[3], ys[3]);
+  ctx.closePath();
+  ctx.strokeStyle = COR_PAREDE;
+  ctx.lineWidth = PAREDE_TRACO;
+  ctx.lineJoin = "miter";
+  ctx.setLineDash([]);
+  ctx.stroke();
 }
 
 function ehJanelaDaFrente(p) {
@@ -379,9 +425,9 @@ function ehJanelaDaFrente(p) {
 function drawEixos() {
   const folga = 0.22;
   ctx.save();
-  ctx.strokeStyle = "#3d4454";
-  ctx.lineWidth = 1.2;
-  ctx.setLineDash([14, 4, 2, 4]);
+  ctx.strokeStyle = COR_EIXO;
+  ctx.lineWidth = 0.8;
+  ctx.setLineDash([16, 3, 2, 3]);
   ctx.lineCap = "butt";
   ctx.beginPath();
   for (const x of EIXOS_X) {
@@ -398,21 +444,24 @@ function drawEixos() {
 
 function drawPilar(box) {
   ctx.save();
-  ctx.fillStyle = COR_EIXO;
-  ctx.strokeStyle = "#7f1d1d";
-  ctx.lineWidth = 1;
-  ctx.fillRect(px(box.x), py(box.y), u(box.w), u(box.h));
-  ctx.strokeRect(px(box.x), py(box.y), u(box.w), u(box.h));
+  ctx.beginPath();
+  ctx.rect(px(box.x), py(box.y), u(box.w), u(box.h));
+  ctx.fillStyle = COR_PILAR;
+  ctx.fill();
+  ctx.strokeStyle = "#111111";
+  ctx.lineWidth = PILAR_TRACO;
+  ctx.lineJoin = "miter";
+  ctx.setLineDash([]);
+  ctx.stroke();
   ctx.restore();
 }
 
 function drawColunaFalsa() {
-  ctx.fillStyle = COR_EIXO;
-  ctx.fillRect(px(COLUNA_FALSA.x), py(COLUNA_FALSA.y), u(COLUNA_FALSA.w), u(COLUNA_FALSA.h));
+  drawPilar(COLUNA_FALSA);
   ctx.save();
   ctx.beginPath();
-  ctx.strokeStyle = COR_PAREDE;
-  ctx.lineWidth = 1.25;
+  ctx.strokeStyle = "#f2f2f2";
+  ctx.lineWidth = 1.35;
   ctx.arc(
     px(COLUNA_FALSA.x + COLUNA_FALSA.w / 2),
     py(COLUNA_FALSA.y + COLUNA_FALSA.h / 2),
@@ -428,19 +477,20 @@ function drawEstrutura() {
   drawEixos();
   for (const c of columns) drawPilar(columnBox(c));
   for (const c of COLUNAS_DIVISAO) drawPilar(columnBox(c));
-  drawDim(0, Y0 - 0.75, 3.40, Y0 - 0.75, "3,40 m", COR_EIXO);
-  drawDim(3.40, Y0 - 0.75, 7.45, Y0 - 0.75, "4,05 m", COR_EIXO);
-  drawDim(-0.75, 4.00, -0.75, 7.15, "3,15 m", COR_EIXO);
-  drawDim(-0.75, 7.15, -0.75, 10.32, "3,17 m", COR_EIXO);
-  drawDim(-0.75, 10.32, -0.75, 14.20, "3,88 m", COR_EIXO);
+  drawDim(0, Y0 - 0.75, 3.40, Y0 - 0.75, "3,40 m", COR_COTA);
+  drawDim(3.40, Y0 - 0.75, 7.45, Y0 - 0.75, "4,05 m", COR_COTA);
+  drawDim(-0.75, 4.00, -0.75, 7.15, "3,15 m", COR_COTA);
+  drawDim(-0.75, 7.15, -0.75, 10.32, "3,17 m", COR_COTA);
+  drawDim(-0.75, 10.32, -0.75, 14.20, "3,88 m", COR_COTA);
   drawDim(0, Y0 - 0.35, W, Y0 - 0.35, "7,45 m", COR_GERAL);
   drawDim(-0.35, Y0, -0.35, H, "10,20 m", COR_GERAL);
 }
 
 // Folha Vedação: envelope e divisões em faixa de 14 cm. A frente entre as colunas não volta a ser parede cega.
+// Esquerda e fundo são medidas internas: a faixa de 14 cm fica para fora da linha tracejada.
 function drawVedacao() {
-  blocoParede(0, Y0, WALL_T, D);
-  blocoParede(0, H - WALL_T, W, WALL_T);
+  blocoParede(-WALL_T, Y0, WALL_T, D + WALL_T);
+  blocoParede(-WALL_T, H, W + WALL_T, WALL_T);
   for (const w of walls) {
     const naParedeB = Math.abs(w.x1 - W) < 1e-6 && Math.abs(w.x2 - W) < 1e-6;
     if (!naParedeB || w.dash) continue;
@@ -462,16 +512,16 @@ function drawEsquadrias() {
   drawEntradaVidro();
   drawTresFolhas();
   drawJanelaAltaFrente();
-  for (const porta of portas) drawPorta(porta, "#2f6df0");
+  for (const porta of portas) drawPorta(porta, "#4a4a4a");
   if (startPoint && hoverPoint && !samePoint(startPoint, hoverPoint)) {
     drawPorta(
       { x1: startPoint.x, y1: startPoint.y, x2: hoverPoint.x, y2: hoverPoint.y, tipo: "correr" },
-      "rgba(47,109,240,0.45)"
+      "rgba(74,74,74,0.45)"
     );
   }
   if (startPoint) {
     ctx.save();
-    ctx.fillStyle = "#2f6df0";
+    ctx.fillStyle = "#4a4a4a";
     ctx.beginPath();
     ctx.arc(px(startPoint.x), py(startPoint.y), 5, 0, Math.PI * 2);
     ctx.fill();
@@ -491,16 +541,33 @@ function drawCotas() {
   drawDim(3.47, 9.92, 7.31, 9.92, "3,84 m", COR_FACE);
   drawDim(3.535, 4.40, 7.18, 4.40, "3,645 m", COR_FACE);
   drawDim(7.05, 5.7775, 7.05, 7.015, "1,238 m", COR_FACE);
+  drawCotasEsquadrias();
+}
+
+// Início e sobra da folha até a face seguinte. Menos de 1 cm não vira cota.
+function cotaFolga(x1, y1, x2, y2) {
+  const d = Math.hypot(x2 - x1, y2 - y1);
+  if (d < 0.01) return;
+  drawDim(x1, y1, x2, y2, `${fmt(d)} m`, COR_COTA);
+}
+
+function drawCotasEsquadrias() {
+  // Porta 1, y 7,285–8,185: o início é a face da coluna. A sobra é a parede até a porta seguinte.
+  cotaFolga(5.05, 8.185, 5.05, 9.035);
+  // Porta 2, y 9,035–9,935: o início encosta na parede. A sobra vai até a face da coluna.
+  cotaFolga(5.05, 9.935, 5.05, 10.185);
+  // Porta 3, y 10,32, x 3,60–4,50: 13 cm depois da face x 3,47. O fim encosta na parede seguinte.
+  cotaFolga(3.47, 9.40, 3.60, 9.40);
 }
 
 function drawAmbientes() {
-  const cor = "#1f2430";
+  const cor = COR_AMBIENTE;
   const itens = [
-    ["A · cozinha", 2.45, 5.55],
-    ["B · banheiro", 2.15, 8.40],
-    ["C · quarto casal", 2.05, 12.15],
-    ["D · quarto solteiro", 5.70, 12.35],
-    ["E · copa/sala", 5.20, 6.35],
+    ["COZINHA", 2.45, 5.55],
+    ["BANHEIRO", 2.15, 8.40],
+    ["QUARTO CASAL", 2.05, 12.15],
+    ["QUARTO SOLTEIRO", 5.70, 12.35],
+    ["COPA/SALA", 5.20, 6.35],
   ];
   for (const [texto, x, y] of itens) drawUpright(texto, x, y, cor, 13, "700");
 }
@@ -510,7 +577,9 @@ function draw() {
   if (drawing) return;
   drawing = true;
   try {
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  placeCanvas();
+  syncView();
+  const dpr = window.devicePixelRatio || 1;
   const cssW = canvas.clientWidth || STAGE_W;
   const cssH = canvas.clientHeight || STAGE_H;
   const bw = Math.max(1, Math.round(cssW * dpr));
@@ -547,39 +616,48 @@ function drawJanelaFolha(x, y, w, fill, dash) {
   ctx.restore();
 }
 function drawJanelaAltaFrente() {
-  drawJanelaFolha(J4_X0, J4_Y_FIXA, J4_F, "rgba(14,122,74,0.55)");
-  drawJanelaFolha(J4_X1 - J4_F, J4_Y_FIXA, J4_F, "rgba(14,122,74,0.55)");
-  drawJanelaFolha(J4_MOV_L_FECHADA, J4_Y_MOVEL, J4_M, "rgba(14,122,74,0.28)");
-  drawJanelaFolha(J4_MOV_R_FECHADA, J4_Y_MOVEL, J4_M, "rgba(14,122,74,0.28)");
-  drawJanelaFolha(J4_X0, J4_Y_MOVEL, J4_M, "rgba(14,122,74,0.06)", [5, 4]);
-  drawJanelaFolha(J4_X1 - J4_M, J4_Y_MOVEL, J4_M, "rgba(14,122,74,0.06)", [5, 4]);
+  drawJanelaFolha(J4_X0, J4_Y_FIXA, J4_F, "rgba(74,74,74,0.18)");
+  drawJanelaFolha(J4_X1 - J4_F, J4_Y_FIXA, J4_F, "rgba(74,74,74,0.18)");
+  drawJanelaFolha(J4_MOV_L_FECHADA, J4_Y_MOVEL, J4_M, "rgba(74,74,74,0)");
+  drawJanelaFolha(J4_MOV_R_FECHADA, J4_Y_MOVEL, J4_M, "rgba(74,74,74,0)");
+  setaEsquadria(J4_MOV_L_FECHADA + J4_M * 0.62, J4_Y_MOVEL + J4_T / 2, -1, 0);
+  setaEsquadria(J4_MOV_R_FECHADA + J4_M * 0.38, J4_Y_MOVEL + J4_T / 2, 1, 0);
   const vão0 = J4_X0 + J4_F + J4_SOBRA;
   const vão1 = J4_X1 - J4_F - J4_SOBRA;
-  drawDim(J4_X0, 4.72, J4_X0 + J4_F, 4.72, `fixa ${fmt(J4_F)} m`, J4_COR);
-  drawDim(J4_MOV_L_FECHADA, 5.02, J4_MOV_L_FECHADA + J4_M, 5.02, `móvel ${fmt(J4_M)} m`, J4_COR);
-  drawDim(vão0, 5.40, vão1, 5.40, `vão ${fmt3(vão1 - vão0)} m`, J4_COR);
-  drawUpright("10 cm", J4_X0 + J4_F + J4_SOBRA / 2, 4.52, J4_COR, 10, "600");
-  drawUpright("10 cm", J4_X1 - J4_F - J4_SOBRA / 2, 4.52, J4_COR, 10, "600");
+  drawDim(J4_X0, 4.72, J4_X0 + J4_F, 4.72, `fixa ${fmt(J4_F)} m`, COR_COTA);
+  drawDim(J4_MOV_L_FECHADA, 5.02, J4_MOV_L_FECHADA + J4_M, 5.02, `móvel ${fmt(J4_M)} m`, COR_COTA);
+  drawDim(vão0, 5.40, vão1, 5.40, `vão ${fmt3(vão1 - vão0)} m`, COR_COTA);
+  drawUpright("10 cm", J4_X0 + J4_F + J4_SOBRA / 2, 4.52, COR_COTA, 10, "600");
+  drawUpright("10 cm", J4_X1 - J4_F - J4_SOBRA / 2, 4.52, COR_COTA, 10, "600");
 }
 function drawEntradaVidro() {
   ctx.save();
-  ctx.fillStyle = "rgba(12,127,150,0.35)";
+  ctx.fillStyle = "rgba(74,74,74,0.12)";
   ctx.strokeStyle = VIDRO_COR;
-  ctx.lineWidth = 1.6;
+  ctx.lineWidth = 1.4;
   ctx.fillRect(px(ENT_X), py(ENT_FECHADA_Y), u(ENT_FOLHA_T), u(ENT_FOLHA));
   ctx.strokeRect(px(ENT_X), py(ENT_FECHADA_Y), u(ENT_FOLHA_T), u(ENT_FOLHA));
-  ctx.setLineDash([6, 4]);
-  ctx.strokeRect(px(ENT_X), py(ENT_ABERTA_Y), u(ENT_FOLHA_T), u(ENT_FOLHA));
   ctx.restore();
   const ax = ENT_X - 0.08;
-  strokeMeters(ax, ENT_FECHADA_Y, ax, ENT_ABERTA_Y, VIDRO_COR, 1.4);
-  strokeMeters(ax, ENT_ABERTA_Y, ax - 0.045, ENT_ABERTA_Y - 0.12, VIDRO_COR, 1.4);
-  strokeMeters(ax, ENT_ABERTA_Y, ax + 0.045, ENT_ABERTA_Y - 0.12, VIDRO_COR, 1.4);
-  drawDim(6.95, ENT_FECHADA_Y, 6.95, ENT_FECHADA_Y + ENT_FOLHA, `folha ${fmt3(ENT_FOLHA)} m`, VIDRO_COR);
-  drawDim(6.35, ENT_FECHADA_Y, 6.35, ENT_ABERTA_Y, `vão ${fmt3(ENT_PASSAGEM)} m`, VIDRO_COR);
-  drawDim(6.65, ENT_ABERTA_Y, 6.65, ENT_PAREDE, `${fmt(ENT_PUXADOR)} m`, VIDRO_COR);
-  drawDim(5.95, ENT_ABERTA_Y, 5.95, ENT_ABERTA_FIM, "arraste", VIDRO_COR);
-  drawUpright(`${fmt3(ENT_ABERTA_FIM)} m`, 5.95, ENT_ABERTA_FIM + 0.16, VIDRO_COR, 11, "600");
+  ctx.save();
+  ctx.strokeStyle = VIDRO_COR;
+  ctx.lineWidth = 1.1;
+  ctx.setLineDash([10, 3, 2, 3, 2, 3]);
+  ctx.beginPath();
+  ctx.moveTo(px(ax), py(ENT_FECHADA_Y));
+  ctx.lineTo(px(ax), py(ENT_ABERTA_Y));
+  ctx.stroke();
+  ctx.restore();
+  setaEsquadria(ENT_X + ENT_FOLHA_T / 2, ENT_FECHADA_Y + 0.18, 0, 1);
+  const entFim = ENT_FECHADA_Y + ENT_FOLHA;
+  if (ENT_PAREDE - entFim >= 0.01) {
+    drawDim(7.15, entFim, 7.15, ENT_PAREDE, `${fmt(ENT_PAREDE - entFim)} m`, COR_COTA);
+  }
+  drawDim(6.95, ENT_FECHADA_Y, 6.95, entFim, `folha ${fmt3(ENT_FOLHA)} m`, COR_COTA);
+  drawDim(6.35, ENT_FECHADA_Y, 6.35, ENT_ABERTA_Y, `vão ${fmt3(ENT_PASSAGEM)} m`, COR_COTA);
+  drawDim(6.65, ENT_ABERTA_Y, 6.65, ENT_PAREDE, `${fmt(ENT_PUXADOR)} m`, COR_COTA);
+  drawDim(5.95, ENT_ABERTA_Y, 5.95, ENT_ABERTA_FIM, "arraste", COR_COTA);
+  drawUpright(`${fmt3(ENT_ABERTA_FIM)} m`, 5.95, ENT_ABERTA_FIM + 0.16, COR_COTA, 11, "600");
 }
 function drawFolha(box, fill, dash) {
   ctx.save();
@@ -591,26 +669,34 @@ function drawFolha(box, fill, dash) {
   ctx.strokeRect(px(box.x), py(box.y), u(box.w), u(box.h || F3_T));
   ctx.restore();
 }
+function setaEsquadria(x, y, dirX, dirY) {
+  const len = Math.hypot(dirX, dirY) || 1;
+  const ux = dirX / len;
+  const uy = dirY / len;
+  const pxn = -uy;
+  const pyn = ux;
+  const tipX = x + ux * 0.28;
+  const tipY = y + uy * 0.28;
+  const cor = "#4a4a4a";
+  strokeMeters(x, y, tipX, tipY, cor, 1.6);
+  strokeMeters(tipX, tipY, tipX - ux * 0.08 + pxn * 0.03, tipY - uy * 0.08 + pyn * 0.03, cor, 1.6);
+  strokeMeters(tipX, tipY, tipX - ux * 0.08 - pxn * 0.03, tipY - uy * 0.08 - pyn * 0.03, cor, 1.6);
+}
 function setaParaParede(x, y) {
-  const tip = x - 0.18;
-  strokeMeters(x, y, tip, y, F3_COR, 1.4);
-  strokeMeters(tip, y, tip + 0.07, y - 0.025, F3_COR, 1.4);
-  strokeMeters(tip, y, tip + 0.07, y + 0.025, F3_COR, 1.4);
+  setaEsquadria(x, y, -1, 0);
 }
 function drawTresFolhas() {
   drawFolha(F3_FIXA, "rgba(36,87,197,0.45)");
-  drawFolha(F3_CENTRO, "rgba(36,87,197,0.28)");
-  drawFolha(F3_PUX, "rgba(36,87,197,0.28)");
-  drawFolha({ x: 0, y: F3_CENTRO.y, w: F3_L }, "rgba(36,87,197,0.08)", [5, 4]);
-  drawFolha({ x: 0, y: F3_PUX.y, w: F3_L1 }, "rgba(36,87,197,0.08)", [5, 4]);
-  setaParaParede(F3_CENTRO.x + F3_L * 0.55, F3_CENTRO.y + F3_T / 2);
-  setaParaParede(F3_PUX.x + 0.35, F3_PUX.y + F3_T / 2);
+  drawFolha(F3_CENTRO, "rgba(36,87,197,0.12)");
+  drawFolha(F3_PUX, "rgba(36,87,197,0.12)");
+  setaParaParede(F3_CENTRO.x + F3_L * 0.62, F3_CENTRO.y + F3_T / 2);
+  setaParaParede(F3_PUX.x + F3_L1 * 0.62, F3_PUX.y + F3_T / 2);
   drawDim(0, 4.62, F3_L, 4.62, `fixa ${fmt(F3_L)} m`, F3_COR);
   drawDim(F3_CENTRO.x, 4.88, F3_CENTRO.x + F3_L, 4.88, `central ${fmt(F3_L)} m`, F3_COR);
   drawDim(F3_PUX.x, 5.14, F3_PUX.x + F3_L1, 5.14, `puxador ${fmt(F3_L1)} m`, F3_COR);
+  const sobreUlt = (F3_CENTRO.x + F3_L) - F3_PUX.x;
   drawUpright("3 cm", F3_L - F3_OVER / 2, 4.36, F3_COR, 10, "600");
-  drawUpright("3 cm", F3_PUX.x + F3_OVER / 2, 4.36, F3_COR, 10, "600");
-  drawUpright("5,5 cm", (F3_FACE + F3_PUX.x + F3_L1) / 2, 4.36, F3_COR, 10, "600");
+  drawUpright(rotuloCm(sobreUlt), F3_PUX.x + sobreUlt / 2, 4.36, F3_COR, 10, "600");
 }
 function drawPorta(porta, color) {
   if (porta.tipo === "correr") drawPortaCorrer(porta, color);
@@ -642,6 +728,7 @@ function drawPortaGiro(porta, color) {
     if (i === 0) ctx.moveTo(sx, sy);
     else ctx.lineTo(sx, sy);
   }
+  ctx.setLineDash([10, 3, 2, 3, 2, 3]);
   ctx.stroke();
   ctx.restore();
 }
@@ -684,37 +771,22 @@ function clientToPoint(e) {
 }
 
 function place(p) {
-  if (!camada("show-esquadrias")) {
-    showHint();
-    return;
-  }
+  if (!camada("show-esquadrias")) return;
   if (!p) return;
   if (!startPoint) {
     startPoint = p;
-    showInfoPanel(
-      `<h3>Início da folha da porta</h3>` +
-      `<div class="t-area">(${fmt(p.x)} ; ${fmt(p.y)}) m</div>` +
-      `<div class="t-light">Clique o fim da folha da porta. A porta corre nesse sentido.</div>`
-    );
     draw();
     return;
   }
   if (samePoint(startPoint, p)) {
     startPoint = null;
     hoverPoint = null;
-    showHint();
     draw();
     return;
   }
-  const raio = Math.hypot(p.x - startPoint.x, p.y - startPoint.y);
   portas.push({ x1: startPoint.x, y1: startPoint.y, x2: p.x, y2: p.y, tipo: "correr" });
   persistPortas();
   renderPortas();
-  showInfoPanel(
-    `<h3>Porta de correr</h3>` +
-    `<div class="t-dim">Uma folha · <strong>${fmt(raio)} m</strong></div>` +
-    `<div class="t-light">De (${fmt(startPoint.x)} ; ${fmt(startPoint.y)}) até (${fmt(p.x)} ; ${fmt(p.y)})</div>`
-  );
   startPoint = null;
   hoverPoint = null;
   draw();
@@ -726,7 +798,6 @@ const chkVedacao = document.getElementById("chkVedacao");
 const chkEsquadrias = document.getElementById("chkEsquadrias");
 const chkCotas = document.getElementById("chkCotas");
 const chkAmbientes = document.getElementById("chkAmbientes");
-const btnFlip = document.getElementById("btnFlip");
 
 function ligaCamada(input, classe) {
   document.body.classList.toggle(classe, input.checked);
@@ -735,7 +806,6 @@ function ligaCamada(input, classe) {
     if (!input.checked && classe === "show-esquadrias") {
       startPoint = null;
       hoverPoint = null;
-      showHint();
     }
     draw();
   });
@@ -746,17 +816,66 @@ ligaCamada(chkEsquadrias, "show-esquadrias");
 ligaCamada(chkCotas, "show-cotas");
 ligaCamada(chkAmbientes, "show-ambientes");
 
-function applyStage() {
-  document.body.classList.toggle("rotated", true);
-  document.body.classList.toggle("flip-v", flipV);
-  VB_INIT = VB_ROTATED;
-  vb = { ...VB_INIT };
-  canvas.style.aspectRatio = `${VB_INIT.w} / ${VB_INIT.h}`;
-  btnFlip.classList.toggle("active", flipV);
+const viewport = document.getElementById("viewport");
+const sheet = document.getElementById("sheet");
+
+function baseSize() {
+  return { w: BASE_W, h: BASE_W * STAGE_H / STAGE_W };
+}
+function syncSheet() {
+  const b = baseSize();
+  sheet.style.width = `${b.w * zoom}px`;
+  sheet.style.height = `${b.h * zoom}px`;
+}
+function placeCanvas() {
+  const port = viewport.getBoundingClientRect();
+  const paper = sheet.getBoundingClientRect();
+  const left = Math.max(port.left, paper.left);
+  const top = Math.max(port.top, paper.top);
+  const right = Math.min(port.right, paper.right);
+  const bottom = Math.min(port.bottom, paper.bottom);
+  const w = Math.max(0, right - left);
+  const h = Math.max(0, bottom - top);
+  canvas.style.left = `${left}px`;
+  canvas.style.top = `${top}px`;
+  canvas.style.width = `${Math.max(1, w)}px`;
+  canvas.style.height = `${Math.max(1, h)}px`;
+  canvas.style.visibility = w < 1 || h < 1 ? "hidden" : "visible";
+}
+function syncView() {
+  const b = baseSize();
+  const sheetW = Math.max(1, b.w * zoom);
+  const sheetH = Math.max(1, b.h * zoom);
+  const viewW = canvas.clientWidth || 1;
+  const viewH = canvas.clientHeight || 1;
+  vb.x = (Math.max(0, viewport.scrollLeft) / sheetW) * STAGE_W;
+  vb.y = (Math.max(0, viewport.scrollTop) / sheetH) * STAGE_H;
+  vb.w = (viewW / sheetW) * STAGE_W;
+  vb.h = (viewH / sheetH) * STAGE_H;
+}
+function applyZoom(next, clientX, clientY) {
+  const rect = viewport.getBoundingClientRect();
+  const ox = clientX - rect.left;
+  const oy = clientY - rect.top;
+  const b = baseSize();
+  const prevW = b.w * zoom;
+  const prevH = b.h * zoom;
+  const relX = (viewport.scrollLeft + ox) / prevW;
+  const relY = (viewport.scrollTop + oy) / prevH;
+  zoom = Math.max(1e-4, next);
+  syncSheet();
+  viewport.scrollLeft = relX * b.w * zoom - ox;
+  viewport.scrollTop = relY * b.h * zoom - oy;
   draw();
 }
 
-btnFlip.addEventListener("click", () => { flipV = !flipV; applyStage(); });
+function applyStage() {
+  document.body.classList.toggle("rotated", false);
+  document.body.classList.toggle("flip-v", flipV);
+  VB_INIT = VB_NORMAL;
+  syncSheet();
+  draw();
+}
 
 canvas.addEventListener("mousemove", (e) => {
   if (!startPoint) return;
@@ -766,26 +885,68 @@ canvas.addEventListener("mousemove", (e) => {
 canvas.addEventListener("click", (e) => {
   place(clientToPoint(e));
 });
+canvas.addEventListener("wheel", (e) => {
+  if (!e.ctrlKey && !e.metaKey) {
+    viewport.scrollLeft += e.deltaX;
+    viewport.scrollTop += e.deltaY;
+    e.preventDefault();
+    return;
+  }
+  e.preventDefault();
+  applyZoom(zoom * Math.exp(-e.deltaY * 0.0015), e.clientX, e.clientY);
+}, { passive: false });
+viewport.addEventListener("scroll", () => draw(), { passive: true });
+
+let toque = null;
+function distToque(e) {
+  const a = e.touches[0];
+  const b = e.touches[1];
+  return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+}
+function meioToque(e) {
+  return {
+    x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+    y: (e.touches[0].clientY + e.touches[1].clientY) / 2,
+  };
+}
+canvas.addEventListener("touchstart", (e) => {
+  if (e.touches.length === 2) {
+    toque = { tipo: "pinça", dist: distToque(e), zoom, meio: meioToque(e) };
+  } else if (e.touches.length === 1) {
+    const t = e.touches[0];
+    toque = { tipo: "pan", x: t.clientX, y: t.clientY, sl: viewport.scrollLeft, st: viewport.scrollTop };
+  }
+}, { passive: true });
+canvas.addEventListener("touchmove", (e) => {
+  if (!toque) return;
+  if (toque.tipo === "pinça" && e.touches.length === 2) {
+    e.preventDefault();
+    const meio = meioToque(e);
+    applyZoom(toque.zoom * (distToque(e) / toque.dist), meio.x, meio.y);
+  } else if (toque.tipo === "pan" && e.touches.length === 1) {
+    e.preventDefault();
+    const t = e.touches[0];
+    viewport.scrollLeft = toque.sl - (t.clientX - toque.x);
+    viewport.scrollTop = toque.st - (t.clientY - toque.y);
+    draw();
+  }
+}, { passive: false });
+canvas.addEventListener("touchend", () => { toque = null; });
 
 window.addEventListener("keydown", (e) => {
   if (e.key !== "Escape" || !startPoint) return;
   startPoint = null;
   hoverPoint = null;
-  showHint();
   draw();
 });
 
 const legendItems = [
-  { swatch: "#2b3140", label: "Parede · 14 cm" },
-  { swatch: "#e04848", label: "Pilar 27×14 cm" },
-  { swatch: "#e04848", label: "Coluna falsa · cano 150 mm" },
-  { swatch: "#e04848", label: "Cota de eixo" },
-  { swatch: "#1f59d8", label: "Cota de face" },
-  { swatch: "#6b7280", label: "Cota geral" },
-  { swatch: "#2f6df0", label: "Porta de giro" },
-  { swatch: "#0c7f96", label: "Vidro de correr · entrada" },
-  { swatch: "#2457c5", label: "Correr · 3 folhas" },
-  { swatch: "#0e7a4a", label: "Janela alta · 4 folhas" },
+  { swatch: "#1c1c1c", label: "Pilar em corte — cheio, contorno grosso" },
+  { swatch: "parede", label: "Parede em corte — contorno e hachura, faixa de 14 cm" },
+  { swatch: "esquadria", label: "Esquadria — linha fina" },
+  { swatch: "eixo", label: "Eixo — traço longo e ponto" },
+  { swatch: "#1a56c4", label: "Cota — linha fina" },
+  { swatch: "#2f6b4f", label: "Texto de ambiente" },
 ];
 const legendList = document.getElementById("legendList");
 legendItems.forEach((it) => {
@@ -793,20 +954,24 @@ legendItems.forEach((it) => {
   const sw = document.createElement("span");
   sw.className = "swatch";
   sw.style.background = it.swatch;
-  if (it.swatch === "wall") {
+  if (it.swatch === "parede") {
+    sw.style.background = "#e7eaee";
+    sw.style.border = "1.5px solid #2a2a2a";
+    sw.style.backgroundImage = "repeating-linear-gradient(135deg, transparent, transparent 2px, rgba(42,42,42,.45) 2px, rgba(42,42,42,.45) 3px)";
+  } else if (it.swatch === "#1c1c1c") {
+    sw.style.border = "2px solid #111111";
+  } else if (it.swatch === "esquadria") {
     sw.style.background = "transparent";
     sw.style.border = "none";
-    sw.style.borderTop = "3px solid #2b3140";
-    sw.style.height = "3px";
-    sw.style.marginTop = "5px";
-  } else if (it.swatch === "wall-open") {
-    sw.style.background = "transparent";
-    sw.style.border = "none";
-    sw.style.borderTop = "2px dashed var(--muted)";
+    sw.style.borderTop = "2px solid #4a4a4a";
     sw.style.height = "2px";
     sw.style.marginTop = "5px";
-  } else if (it.label.startsWith("Parede marcada")) {
-    sw.style.height = "8px";
+  } else if (it.swatch === "eixo") {
+    sw.style.background = "transparent";
+    sw.style.border = "none";
+    sw.style.borderTop = "2px dashed #9aa0a6";
+    sw.style.height = "2px";
+    sw.style.marginTop = "5px";
   }
   li.appendChild(sw);
   li.appendChild(document.createTextNode(it.label));
@@ -814,7 +979,7 @@ legendItems.forEach((it) => {
 });
 
 if (typeof ResizeObserver !== "undefined") {
-  new ResizeObserver(() => draw()).observe(canvas);
+  new ResizeObserver(() => draw()).observe(viewport);
 }
 for (let i = portas.length - 1; i >= 0; i--) {
   const p = portas[i];
